@@ -182,27 +182,58 @@ document.addEventListener('DOMContentLoaded', () => {
             chrome.tabs.sendMessage(tabs[0].id, { action: "GET_TRANSCRIPT" }, (response) => {
                 // Check if lastError exists (content script not injected??)
                 if (chrome.runtime.lastError) {
-                    setStatus('Error connecting to page. Ensure you are on a YouTube video and reload the page.', 'error');
-                    console.error(chrome.runtime.lastError);
-                    summarizeBtn.disabled = false;
+                    console.warn("Connection failed. Attempting to inject content script...", chrome.runtime.lastError);
+                    setStatus('Injecting script...', 'normal');
+
+                    // Attempt to inject content script
+                    chrome.scripting.executeScript({
+                        target: { tabId: tabs[0].id },
+                        files: ['content.js']
+                    }, () => {
+                        if (chrome.runtime.lastError) {
+                            setStatus('Failed to inject script: ' + chrome.runtime.lastError.message + '. Please reload page.', 'error');
+                            console.error("Injection failed:", chrome.runtime.lastError);
+                            summarizeBtn.disabled = false;
+                            return;
+                        }
+
+                        // Retry extracting transcript after injection
+                        setTimeout(() => {
+                            chrome.tabs.sendMessage(tabs[0].id, { action: "GET_TRANSCRIPT" }, (response2) => {
+                                if (chrome.runtime.lastError) {
+                                    setStatus('Still failing after injection. Please reload the YouTube page.', 'error');
+                                    console.error("Retry failed:", chrome.runtime.lastError);
+                                    summarizeBtn.disabled = false;
+                                } else {
+                                    handleTranscriptResponse(response2);
+                                }
+                            });
+                        }, 500);
+                    });
                     return;
                 }
 
-                if (!response || !response.success) {
-                    setStatus(response ? response.error : 'Failed to get transcript.', 'error');
-                    summarizeBtn.disabled = false;
-                    return;
-                }
+                handleTranscriptResponse(response);
+            });
 
-                // We have transcript
-                const transcript = response.transcript;
-                setStatus('Transcript extracted (' + transcript.length + ' chars). Sending to DeepSeek...', 'normal');
+        }); // end tabs.query
 
-                // Build prompt
-                const templateConfig = PROMPT_TEMPLATES[selectedTemplateKey];
-                const instruction = templateConfig ? templateConfig.prompt : PROMPT_TEMPLATES["general_summary"].prompt;
+        function handleTranscriptResponse(response) {
+            if (!response || !response.success) {
+                setStatus(response ? response.error : 'Failed to get transcript.', 'error');
+                summarizeBtn.disabled = false;
+                return;
+            }
 
-                const finalPrompt = `
+            // We have transcript
+            const transcript = response.transcript;
+            setStatus('Transcript extracted (' + transcript.length + ' chars). Sending to DeepSeek...', 'normal');
+
+            // Build prompt
+            const templateConfig = PROMPT_TEMPLATES[selectedTemplateKey];
+            const instruction = templateConfig ? templateConfig.prompt : PROMPT_TEMPLATES["general_summary"].prompt;
+
+            const finalPrompt = `
 ${instruction}
 
 Start the header level at "##" because I will be pasting this in a section that already has a top level header. 
@@ -212,37 +243,37 @@ Transcript:
 \`\`\`
 ${transcript}
 \`\`\`
-                `.trim();
+            `.trim();
 
-                // Send to background for API call
-                chrome.runtime.sendMessage({
-                    action: "SUMMARIZE",
-                    apiKey: apiKey,
-                    prompt: finalPrompt
-                }, (apiResponse) => {
-                    if (chrome.runtime.lastError) {
-                        setStatus('Error contacting background service.', 'error');
-                        summarizeBtn.disabled = false;
-                        return;
-                    }
-
-                    if (apiResponse && apiResponse.success) {
-                        // Copy to clipboard
-                        navigator.clipboard.writeText(apiResponse.summary)
-                            .then(() => {
-                                setStatus('Summary copied to clipboard!', 'success');
-                            })
-                            .catch(err => {
-                                setStatus('Summary generated but failed to copy. Check console.', 'error');
-                                console.error(err);
-                            });
-                    } else {
-                        setStatus('API Error: ' + (apiResponse ? apiResponse.error : 'Unknown'), 'error');
-                    }
+            // Send to background for API call
+            chrome.runtime.sendMessage({
+                action: "SUMMARIZE",
+                apiKey: apiKey,
+                prompt: finalPrompt
+            }, (apiResponse) => {
+                if (chrome.runtime.lastError) {
+                    setStatus('Error contacting background service.', 'error');
                     summarizeBtn.disabled = false;
-                });
+                    return;
+                }
+
+                if (apiResponse && apiResponse.success) {
+                    // Copy to clipboard
+                    navigator.clipboard.writeText(apiResponse.summary)
+                        .then(() => {
+                            setStatus('Summary copied to clipboard!', 'success');
+                        })
+                        .catch(err => {
+                            setStatus('Summary generated but failed to copy. Check console.', 'error');
+                            console.error(err);
+                        });
+                } else {
+                    setStatus('API Error: ' + (apiResponse ? apiResponse.error : 'Unknown'), 'error');
+                }
+                summarizeBtn.disabled = false;
             });
-        });
+        }
+
     });
 
     function setStatus(msg, type) {
