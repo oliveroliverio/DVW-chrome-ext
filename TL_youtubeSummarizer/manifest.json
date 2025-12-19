@@ -1,0 +1,32 @@
+{
+    "manifest_version": 3,
+    "name": "YouTube Summarizer with DeepSeek",
+    "version": "1.0",
+    "description": "Summarize YouTube videos using DeepSeek API.",
+    "permissions": [
+        "activeTab",
+        "scripting",
+        "storage",
+        "clipboardWrite"
+    ],
+    "host_permissions": [
+        "https://www.youtube.com/*",
+        "https://api.deepseek.com/*"
+    ],
+    "background": {
+        "service_worker": "background.js"
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "https://www.youtube.com/*"
+            ],
+            "js": [
+                "content.js"
+            ]
+        }
+    ],
+    "action": {
+        "default_popup": "popup.html"
+    }
+}
