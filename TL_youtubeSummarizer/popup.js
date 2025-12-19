@@ -141,15 +141,49 @@ document.addEventListener('DOMContentLoaded', () => {
     const templateSelect = document.getElementById('template');
     const summarizeBtn = document.getElementById('summarizeBtn');
     const statusDiv = document.getElementById('status');
+    const resultContainer = document.getElementById('result-container');
+    const resultText = document.getElementById('result-text');
+    const copyBtn = document.getElementById('copyBtn');
+    const clearBtn = document.getElementById('clearBtn');
 
-    // Load saved settings
-    chrome.storage.local.get(['deepseekApiKey', 'selectedTemplate'], (result) => {
+    // Load saved settings and last result
+    chrome.storage.local.get(['deepseekApiKey', 'selectedTemplate', 'lastSummary'], (result) => {
         if (result.deepseekApiKey) {
             apiKeyInput.value = result.deepseekApiKey;
         }
         if (result.selectedTemplate) {
             templateSelect.value = result.selectedTemplate;
         }
+        if (result.lastSummary) {
+            resultText.value = result.lastSummary;
+            resultContainer.style.display = 'block';
+        }
+    });
+
+    // Copy Button Handler
+    copyBtn.addEventListener('click', () => {
+        const textToCopy = resultText.value;
+        if (!textToCopy) return;
+
+        navigator.clipboard.writeText(textToCopy)
+            .then(() => {
+                const originalText = copyBtn.innerText;
+                copyBtn.innerText = "Copied!";
+                setTimeout(() => {
+                    copyBtn.innerText = originalText;
+                }, 2000);
+            })
+            .catch(err => {
+                setStatus('Failed to copy manually: ' + err, 'error');
+            });
+    });
+
+    // Clear Button Handler
+    clearBtn.addEventListener('click', () => {
+        resultText.value = '';
+        resultContainer.style.display = 'none';
+        setStatus('', 'normal');
+        chrome.storage.local.remove(['lastSummary']);
     });
 
     summarizeBtn.addEventListener('click', () => {
@@ -161,14 +195,16 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        // Clear previous result display while working
+        setStatus('Getting transcript...', 'normal');
+        resultContainer.style.display = 'none';
+        summarizeBtn.disabled = true;
+
         // Save settings
         chrome.storage.local.set({
             deepseekApiKey: apiKey,
             selectedTemplate: selectedTemplateKey
         });
-
-        setStatus('Getting transcript...', 'normal');
-        summarizeBtn.disabled = true;
 
         // Get active tab
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -177,6 +213,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 summarizeBtn.disabled = false;
                 return;
             }
+
+            console.log("Sending GET_TRANSCRIPT to tab:", tabs[0].id);
 
             // Send message to content script
             chrome.tabs.sendMessage(tabs[0].id, { action: "GET_TRANSCRIPT" }, (response) => {
@@ -198,6 +236,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
 
                         // Retry extracting transcript after injection
+                        console.log("Injection successful. Retrying GET_TRANSCRIPT...");
                         setTimeout(() => {
                             chrome.tabs.sendMessage(tabs[0].id, { action: "GET_TRANSCRIPT" }, (response2) => {
                                 if (chrome.runtime.lastError) {
@@ -219,6 +258,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }); // end tabs.query
 
         function handleTranscriptResponse(response) {
+            console.log("Transcript response received:", response);
             if (!response || !response.success) {
                 setStatus(response ? response.error : 'Failed to get transcript.', 'error');
                 summarizeBtn.disabled = false;
@@ -227,6 +267,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // We have transcript
             const transcript = response.transcript;
+            console.log(`Transcript length: ${transcript.length} characters.`);
             setStatus('Transcript extracted (' + transcript.length + ' chars). Sending to DeepSeek...', 'normal');
 
             // Build prompt
@@ -245,6 +286,8 @@ ${transcript}
 \`\`\`
             `.trim();
 
+            console.log("Sending to Background Service for API Call...");
+
             // Send to background for API call
             chrome.runtime.sendMessage({
                 action: "SUMMARIZE",
@@ -253,19 +296,30 @@ ${transcript}
             }, (apiResponse) => {
                 if (chrome.runtime.lastError) {
                     setStatus('Error contacting background service.', 'error');
+                    console.error("Background service error:", chrome.runtime.lastError);
                     summarizeBtn.disabled = false;
                     return;
                 }
 
-                if (apiResponse && apiResponse.success) {
-                    // Copy to clipboard
+                console.log("API Response received in Popup:", apiResponse);
+
+                if (apiResponse && apiResponse.success && apiResponse.summary) {
+                    // Update UI with Result
+                    resultText.value = apiResponse.summary;
+                    resultContainer.style.display = 'block';
+
+                    // Save result to storage
+                    chrome.storage.local.set({ lastSummary: apiResponse.summary });
+
+                    // Attempt Clipboard Copy
                     navigator.clipboard.writeText(apiResponse.summary)
                         .then(() => {
-                            setStatus('Summary copied to clipboard!', 'success');
+                            setStatus('Summary generated and copied to clipboard!', 'success');
+                            console.log("Auto-copy successful.");
                         })
                         .catch(err => {
-                            setStatus('Summary generated but failed to copy. Check console.', 'error');
-                            console.error(err);
+                            setStatus('Summary generated! (Auto-copy failed, use button below)', 'success');
+                            console.warn("Auto-copy failed:", err);
                         });
                 } else {
                     setStatus('API Error: ' + (apiResponse ? apiResponse.error : 'Unknown'), 'error');

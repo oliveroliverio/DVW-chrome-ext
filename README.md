@@ -1,4 +1,14 @@
+
+
+
+
+
+
+
 # YouTube Summarizer Chrome Extension
+
+## Updating the extension
+- for any updates such as modifying prompts in `popup.js`, go to `chrome://extentions/`, click on the extension, and reload.  
 
 This repository contains a Chrome Extension used to summarize YouTube videos using the DeepSeek API.
 
