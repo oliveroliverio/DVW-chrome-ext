@@ -1,5 +1,13 @@
 
-
+todo
+```
+PROMPT: modify so that the user can choose (dropdown menu) which LLM to send to (API key field stays the same).  Here are the options
+- OpenAI
+- Gemini
+- Claude
+- Grok
+- Ollama Homelab
+```
 
 
 
