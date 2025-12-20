@@ -21,8 +21,11 @@
     const handleGetTranscript = (sendResponse) => {
         // 1. Try to find existing transcript
         let text = extractTranscriptText();
+        const title = document.querySelector('#title > h1')?.innerText?.trim() || document.title.replace(" - YouTube", "").trim();
+        const url = window.location.href;
+
         if (text && text.length > 0) {
-            sendResponse({ success: true, transcript: text });
+            sendResponse({ success: true, transcript: text, title: title, url: url });
             return;
         }
 
@@ -33,8 +36,11 @@
         const tryExtractAfterWait = () => {
             setTimeout(() => {
                 const text = extractTranscriptText();
+                const title = document.querySelector('#title > h1')?.innerText?.trim() || document.title.replace(" - YouTube", "").trim();
+                const url = window.location.href;
+
                 if (text) {
-                    sendResponse({ success: true, transcript: text });
+                    sendResponse({ success: true, transcript: text, title: title, url: url });
                 } else {
                     sendResponse({ success: false, error: "Cloud not extract text after expanding." });
                 }

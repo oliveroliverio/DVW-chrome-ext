@@ -267,6 +267,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // We have transcript
             const transcript = response.transcript;
+            const videoTitle = response.title || "YouTube Video";
+            const videoUrl = response.url || "";
             console.log(`Transcript length: ${transcript.length} characters.`);
             setStatus('Transcript extracted (' + transcript.length + ' chars). Sending to DeepSeek...', 'normal');
 
@@ -305,14 +307,15 @@ ${transcript}
 
                 if (apiResponse && apiResponse.success && apiResponse.summary) {
                     // Update UI with Result
-                    resultText.value = apiResponse.summary;
+                    const finalSummary = `# [${videoTitle}](${videoUrl})\n\n${apiResponse.summary}`;
+                    resultText.value = finalSummary;
                     resultContainer.style.display = 'block';
 
                     // Save result to storage
-                    chrome.storage.local.set({ lastSummary: apiResponse.summary });
+                    chrome.storage.local.set({ lastSummary: finalSummary });
 
                     // Attempt Clipboard Copy
-                    navigator.clipboard.writeText(apiResponse.summary)
+                    navigator.clipboard.writeText(finalSummary)
                         .then(() => {
                             setStatus('Summary generated and copied to clipboard!', 'success');
                             console.log("Auto-copy successful.");
